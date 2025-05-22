@@ -1,0 +1,47 @@
+# Application Settings
+# 应用配置
+APP_ENV=development
+DEBUG=true
+PROJECT_NAME="多智能体AI创作平台"
+API_PREFIX="/api/v1"
+
+# 安全配置
+SECRET_KEY=your-secret-key-here-at-least-32-characters
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+
+# 数据库配置
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_creation
+
+# Redis配置
+REDIS_URL=redis://localhost:6379/0
+
+# Milvus配置
+MILVUS_URI=http://localhost:19530
+
+# Neo4j配置
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=password
+
+# LLM配置
+LANGCHAIN_LLM_API_KEY=your-llm-api-key
+LANGCHAIN_LLM_MODEL=gpt-4
+
+# CORS配置
+CORS_ORIGINS=["http://localhost:3000","http://localhost:8000"]
+
+# 日志配置
+LOG_LEVEL=INFO
+LOG_FORMAT=json
+
+# Celery配置
+CELERY_BROKER_URL=redis://localhost:6379/1
+CELERY_RESULT_BACKEND=redis://localhost:6379/2
+
+# 知识管理器配置
+KNOWLEDGE_MANAGER__USE_ENHANCED_VERSION=true
+KNOWLEDGE_MANAGER__BATCH_SIZE=100
+KNOWLEDGE_MANAGER__CACHE_ENABLED=true
+KNOWLEDGE_MANAGER__VECTOR_DIMENSION=1536
+KNOWLEDGE_MANAGER__COLLECTION_NAME=knowledge
+

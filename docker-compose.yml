@@ -1,0 +1,128 @@
+services:
+  # —— 应用服务 ——  
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dev_app
+    volumes:
+      - ./app:/app               # 同步源码
+      - ./.env:/app/.env         # 环境变量文件（可选）
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/dev_db
+      REDIS_URL: redis://redis:6379/0
+      MILVUS_URI: http://milvus:19530
+      NEO4J_URI: bolt://neo4j:7687
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      - postgres
+      - redis
+      - etcd
+      - minio
+      - milvus
+      - neo4j
+
+  # —— PostgreSQL ——  
+  postgres:
+    image: postgres:16-alpine
+    container_name: dev_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dev_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # —— Redis ——  
+  redis:
+    image: redis:7.2-alpine
+    container_name: dev_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+
+  # —— Etcd ——  
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: dev_etcd
+    command:
+      - etcd
+      - --advertise-client-urls=http://0.0.0.0:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+    ports:
+      - "2379:2379"
+
+  # —— MinIO ——  
+  minio:
+    image: minio/minio:latest
+    container_name: dev_minio
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: server /data
+    ports:
+      - "9000:9000"
+    volumes:
+      - minio_data:/data
+
+  # —— Milvus ——  
+  milvus:
+    image: milvusdb/milvus:v2.3.3
+    container_name: dev_milvus
+    depends_on:
+      - etcd
+      - minio
+    environment:
+      ETCD_ENDPOINTS: http://etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+
+  # —— Neo4j ——  
+  neo4j:
+    image: neo4j:5-community
+    container_name: dev_neo4j
+    environment:
+      NEO4J_AUTH: neo4j/secret
+    volumes:
+      - neo4j_data:/data
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+
+  # —— Celery Worker ——  
+  celery_worker:
+    image: dev_app 
+    container_name: dev_celery_worker
+    command: poetry run celery -A main.celery_app worker --loglevel=info
+    depends_on:
+      - redis
+      - postgres
+
+  # —— Celery Beat ——  
+  celery_beat:
+    image: dev_app 
+    container_name: dev_celery_beat
+    command: poetry run celery -A main.celery_app beat --loglevel=info
+    depends_on:
+      - redis
+      - postgres
+      - celery_worker
+
+volumes:
+  postgres_data:
+  redis_data:
+  etcd_data:
+  minio_data:
+  neo4j_data:
+  neo4j_logs:
