@@ -157,7 +157,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     Args:
         app: FastAPI应用实例
     """
-    # TODO: 注册自定义异常处理器
+    from app.utils.error_handlers import setup_exception_handlers
+    setup_exception_handlers(app)
 
 
 app = create_app()

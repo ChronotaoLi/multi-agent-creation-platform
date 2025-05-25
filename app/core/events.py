@@ -50,7 +50,9 @@ async def _startup_db(app: FastAPI) -> None:
         app: FastAPI应用实例
     """
     logger.info("正在初始化数据库连接...")
-    # TODO: 实现数据库连接初始化
+    from app.data_access.db_session import engine, init_db
+    await init_db(engine)
+    app.state.db_engine = engine
     app.state.db_initialized = True
     logger.info("数据库连接初始化完成")
 
@@ -62,7 +64,10 @@ async def _startup_redis(app: FastAPI) -> None:
         app: FastAPI应用实例
     """
     logger.info("正在初始化Redis连接...")
-    # TODO: 实现Redis连接初始化
+    from app.data_access.cache.redis_client import RedisClient
+    client = RedisClient()
+    await client.connect()
+    app.state.redis_client = client
     app.state.redis_initialized = True
     logger.info("Redis连接初始化完成")
 
@@ -74,7 +79,10 @@ async def _startup_vector_store(app: FastAPI) -> None:
         app: FastAPI应用实例
     """
     logger.info("正在初始化向量存储...")
-    # TODO: 实现向量存储(Milvus)初始化
+    from app.data_access.vector_store.milvus_client import MilvusClient
+    client = MilvusClient()
+    await client.connect()
+    app.state.milvus_client = client
     app.state.vector_store_initialized = True
     logger.info("向量存储初始化完成")
 
@@ -86,7 +94,16 @@ async def _startup_graph_store(app: FastAPI) -> None:
         app: FastAPI应用实例
     """
     logger.info("正在初始化图存储...")
-    # TODO: 实现图存储(Neo4j)初始化
+    from app.data_access.graph_store.neo4j_client import Neo4jClient
+    # settings is already imported at the top of the file
+    client = Neo4jClient(
+        uri=settings.neo4j_uri,
+        user=settings.neo4j_username,
+        password=settings.neo4j_password,
+        database=settings.neo4j_database  # Assuming settings.neo4j_database exists
+    )
+    await client.connect()
+    app.state.neo4j_client = client
     app.state.graph_store_initialized = True
     logger.info("图存储初始化完成")
 
@@ -122,7 +139,9 @@ async def _shutdown_db(app: FastAPI) -> None:
         app: FastAPI应用实例
     """
     logger.info("正在关闭数据库连接...")
-    # TODO: 实现数据库连接关闭
+    from app.data_access.db_session import engine # Import engine, though it might be better to get it from app.state
+    if hasattr(app.state, 'db_engine') and app.state.db_engine:
+        await app.state.db_engine.dispose()
     app.state.db_initialized = False
     logger.info("数据库连接已关闭")
 
@@ -134,7 +153,8 @@ async def _shutdown_redis(app: FastAPI) -> None:
         app: FastAPI应用实例
     """
     logger.info("正在关闭Redis连接...")
-    # TODO: 实现Redis连接关闭
+    if hasattr(app.state, 'redis_client') and app.state.redis_client:
+        await app.state.redis_client.close()
     app.state.redis_initialized = False
     logger.info("Redis连接已关闭")
 
@@ -146,7 +166,8 @@ async def _shutdown_vector_store(app: FastAPI) -> None:
         app: FastAPI应用实例
     """
     logger.info("正在关闭向量存储...")
-    # TODO: 实现向量存储关闭
+    if hasattr(app.state, 'milvus_client') and app.state.milvus_client:
+        await app.state.milvus_client.close()
     app.state.vector_store_initialized = False
     logger.info("向量存储已关闭")
 
@@ -158,6 +179,7 @@ async def _shutdown_graph_store(app: FastAPI) -> None:
         app: FastAPI应用实例
     """
     logger.info("正在关闭图存储...")
-    # TODO: 实现图存储关闭
+    if hasattr(app.state, 'neo4j_client') and app.state.neo4j_client:
+        await app.state.neo4j_client.close()
     app.state.graph_store_initialized = False
     logger.info("图存储已关闭")

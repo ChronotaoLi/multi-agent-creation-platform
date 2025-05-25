@@ -41,6 +41,8 @@ poetry install
 cp .env示例 .env
 
 # 编辑.env文件，配置必要的环境变量
+# 重要：请确保在 .env 文件中设置了 SECRET_KEY，这是一个用于保障应用安全的随机字符串。
+# 例如：SECRET_KEY=your_strong_random_secret_key_here
 ```
 
 ### 启动依赖服务
@@ -49,6 +51,11 @@ cp .env示例 .env
 # 启动服务（需要Docker和Docker Compose）
 python scripts/start_services.py --action start
 ```
+
+# 配置说明：
+# - Celery: 如果未在 .env 文件中明确配置 `CELERY_BROKER_URL` 和 `CELERY_RESULT_BACKEND`，
+#   系统将默认使用 Redis 服务（与主缓存 Redis 分别使用不同的数据库编号）。
+#   `CELERY_BROKER_URL` 将使用 Redis DB 1，`CELERY_RESULT_BACKEND` 将使用 Redis DB 2。
 
 ### 初始化数据库
 
