@@ -29,27 +29,55 @@ class ProjectRepository(BaseRepository[Project]):
         """
         super().__init__(Project, db)
     
-    async def get_by_user(self, user_id: int, skip: int = 0, limit: int = 100) -> List[Project]:
-        """获取用户的项目列表
+    async def get_by_user(self, user_id: int, skip: int = 0, limit: int = 100, project_type: Optional[str] = None, status: Optional[str] = None) -> Tuple[List[Project], int]:
+        """获取用户的项目列表（分页），可根据项目类型和状态过滤
         
         Args:
             user_id: 用户ID
             skip: 跳过的记录数
             limit: 返回的最大记录数
+            project_type: 项目类型 (可选)
+            status: 项目状态 (可选)
             
         Returns:
-            List[Project]: 项目列表
+            Tuple[List[Project], int]: 项目列表和总数
         """
-        # 查询用户有权限的项目
+        from sqlalchemy import func
+
+        # Base query for fetching projects
         query = (
             select(Project)
             .join(ProjectUser, ProjectUser.project_id == Project.id)
             .where(ProjectUser.user_id == user_id)
-            .offset(skip)
-            .limit(limit)
         )
+
+        # Base query for counting projects
+        count_query = (
+            select(func.count(Project.id))
+            .join(ProjectUser, ProjectUser.project_id == Project.id)
+            .where(ProjectUser.user_id == user_id)
+        )
+
+        # Apply filters
+        if project_type:
+            query = query.where(Project.project_type == project_type)
+            count_query = count_query.where(Project.project_type == project_type)
+        
+        if status:
+            query = query.where(Project.status == status)
+            count_query = count_query.where(Project.status == status)
+        
+        # Get total count
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar_one_or_none() or 0
+        
+        # Apply ordering and pagination to the main query
+        query = query.order_by(Project.created_at.desc()).offset(skip).limit(limit)
+        
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        projects = list(result.scalars().all())
+        
+        return projects, total
     
     async def get_with_details(self, project_id: int) -> Optional[Project]:
         """获取项目详情，包含关联内容、智能体等
@@ -73,13 +101,19 @@ class ProjectRepository(BaseRepository[Project]):
         result = await self.db.execute(query)
         return result.scalars().first()
     
-    async def add_user_to_project(self, project_id: int, user_id: int, role: str) -> None:
-        """添加用户到项目
+    async def add_user_to_project(self, project_id: int, user_id: int, role: str) -> Dict[str, Any]:
+        """添加用户到项目，或更新用户角色，并返回用户详细信息和角色
         
         Args:
             project_id: 项目ID
             user_id: 用户ID
             role: 用户在项目中的角色
+            
+        Returns:
+            Dict[str, Any]: 包含用户ID, 用户名, 显示名称, 邮箱和角色的字典
+            
+        Raises:
+            ValueError: 如果用户不存在 (理论上应该由服务层检查，但以防万一)
         """
         # 检查记录是否已存在
         query = (
@@ -105,6 +139,35 @@ class ProjectRepository(BaseRepository[Project]):
             self.db.add(project_user)
         
         await self.db.commit()
+        # Ensure the project_user object is refreshed to get any DB-generated values if needed,
+        # though for role and IDs, it's usually fine.
+        await self.db.refresh(project_user) 
+
+        # 获取用户详细信息
+        user_details_query = (
+            select(User.id, User.username, User.display_name, User.email, ProjectUser.role)
+            .join(ProjectUser, User.id == ProjectUser.user_id)
+            .where(and_(
+                ProjectUser.project_id == project_id,
+                ProjectUser.user_id == user_id
+            ))
+        )
+        user_details_result = await self.db.execute(user_details_query)
+        user_info = user_details_result.first() # .first() returns a RowProxy or None
+
+        if not user_info:
+            # This case should ideally not be reached if user_id is validated upstream
+            # or if the ProjectUser record implies user existence due to FK constraints.
+            # However, as a safeguard:
+            raise ValueError(f"User with id {user_id} not found or not associated with project {project_id} after add/update.")
+
+        return {
+            "id": user_info.id,
+            "username": user_info.username,
+            "display_name": user_info.display_name,
+            "email": user_info.email,
+            "role": user_info.role # This is the role from ProjectUser table
+        }
     
     async def remove_user_from_project(self, project_id: int, user_id: int) -> None:
         """从项目中移除用户

@@ -446,4 +446,118 @@ class TestProjectsAPI:
         data = response.json()
         
         # 验证返回的数据是空列表
-        assert data == [] 
+        assert data == []
+
+    def test_get_projects_with_filtering(self, client, auth_headers, mocker):
+        """测试获取项目列表 - 带过滤参数"""
+        project_type_filter = "story"
+        status_filter = "active"
+
+        # Mock get_current_user
+        mocker.patch(
+            "app.api.v1.endpoints.projects.get_current_user",
+            return_value={"id": 1, "username": "testuser"}
+        )
+
+        # Mock get_project_service
+        mock_project_service = AsyncMock()
+        mock_project_service.get_projects_by_user = AsyncMock(return_value=([], 0)) # (items, total)
+        
+        mocker.patch(
+            "app.api.v1.endpoints.projects.get_project_service",
+            return_value=mock_project_service
+        )
+
+        # Call the endpoint with query parameters
+        response = client.get(
+            f"/projects/?project_type={project_type_filter}&status={status_filter}",
+            headers=auth_headers
+        )
+
+        assert response.status_code == 200
+        # Assert that the service method was called with the correct filter parameters
+        mock_project_service.get_projects_by_user.assert_called_once()
+        
+        # Check the keyword arguments passed to get_projects_by_user
+        # The actual call is get_projects_by_user(user_id=X, skip=Y, limit=Z, project_type=..., status=...)
+        # So we check kwargs part of call_args
+        args, kwargs = mock_project_service.get_projects_by_user.call_args
+        assert kwargs.get("project_type") == project_type_filter
+        assert kwargs.get("status") == status_filter
+        assert kwargs.get("user_id") == 1 # From mocked get_current_user
+        # Default pagination params: page=1, page_size=10 -> skip=0, limit=10
+        assert kwargs.get("skip") == 0
+        assert kwargs.get("limit") == 10
+
+
+    def test_add_project_member_returns_actual_details(self, client, auth_headers, mocker):
+        """测试添加项目成员 - 验证返回实际成员详情"""
+        project_id = 1
+        member_data_payload = {"user_id": 123, "role": "editor"}
+
+        mock_member_details_from_service = {
+            "id": 123,
+            "username": "testmember",
+            "display_name": "Test Member",
+            "email": "member@example.com",
+            "role": "editor"
+        }
+
+        # Mock get_current_user (needed for validate_project_owner dependency)
+        # validate_project_owner itself might call project_service.get_project_by_id and check roles.
+        # For this test, we assume validate_project_owner passes.
+        # A simple mock for get_current_user should be enough if validate_project_owner is robustly unit-tested.
+        # However, validate_project_owner might call project_service.get_project_by_id and then check the user_id.
+        # Let's provide a mock project for validate_project_owner
+        mock_project_for_validation = MagicMock()
+        mock_project_for_validation.created_by = 1 # Assuming current_user.id = 1 is owner
+
+        mock_user_service_for_deps = AsyncMock()
+        mock_user_service_for_deps.get_project_by_id = AsyncMock(return_value=mock_project_for_validation)
+        # This is a simplification; validate_project_owner actually calls `project_service.get_project_users`
+        # and checks if the current user is an owner.
+        # For an integration test of the endpoint, we should mock what the endpoint itself calls.
+        # The `validate_project_owner` dependency is complex.
+        # Let's mock `validate_project_owner` directly to simplify this integration test,
+        # assuming `validate_project_owner` is tested elsewhere.
+        
+        mocker.patch("app.api.v1.deps.get_current_user", return_value={"id": 1, "username": "testowner"})
+        # Mocking validate_project_owner to bypass its internal logic for this test
+        mocker.patch(
+            "app.api.v1.endpoints.projects.validate_project_owner", 
+            return_value=MagicMock() # Simulate successful validation
+        )
+
+
+        # Mock get_project_service for the main endpoint logic
+        mock_project_service_endpoint = AsyncMock()
+        mock_project_service_endpoint.add_user_to_project = AsyncMock(return_value=mock_member_details_from_service)
+        
+        mocker.patch(
+            "app.api.v1.endpoints.projects.get_project_service",
+            return_value=mock_project_service_endpoint
+        )
+
+        response = client.post(
+            f"/projects/{project_id}/members",
+            json=member_data_payload,
+            headers=auth_headers
+        )
+
+        assert response.status_code == 200 # FastAPI default for POST if no other code specified
+
+        expected_response_body = {
+            "project_id": project_id,
+            "user_id": mock_member_details_from_service["id"],
+            "username": mock_member_details_from_service["username"],
+            "display_name": mock_member_details_from_service["display_name"],
+            "email": mock_member_details_from_service["email"],
+            "role": mock_member_details_from_service["role"]
+        }
+        assert response.json() == expected_response_body
+        
+        mock_project_service_endpoint.add_user_to_project.assert_called_once_with(
+            project_id=project_id,
+            user_id=member_data_payload["user_id"],
+            role=member_data_payload["role"]
+        )

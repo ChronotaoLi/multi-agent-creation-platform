@@ -52,14 +52,11 @@ async def create_project(
     Returns:
         ProjectResponse: 创建的项目信息
     """
-    try:
-        project = await project_service.create_project(project_data, current_user.id)
-        return project
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"创建项目失败: {str(e)}"
-        )
+    # The service layer (create_project) is expected to handle specific exceptions like
+    # ResourceNotFoundError and raise them. These will be caught by global handlers
+    # or specific handlers if defined. Generic Exception catch-all removed.
+    project = await project_service.create_project(project_data, current_user.id)
+    return project
 
 @router.get("/", response_model=Page[ProjectListItem])
 async def get_projects(
@@ -82,12 +79,12 @@ async def get_projects(
         Page[ProjectListItem]: 分页后的项目列表
     """
     try:
-        # 这里应该根据项目类型和状态进行过滤
-        # 由于接口中没有详细定义过滤逻辑，这里简化处理
         projects, total = await project_service.get_projects_by_user(
             user_id=current_user.id, 
             skip=pagination.page_size * (pagination.page - 1),
-            limit=pagination.page_size
+            limit=pagination.page_size,
+            project_type=project_type,
+            status=status
         )
         
         # 转换为响应模型
@@ -101,11 +98,8 @@ async def get_projects(
             page_size=pagination.page_size,
             pages=(total + pagination.page_size - 1) // pagination.page_size
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取项目列表失败: {str(e)}"
-        )
+    # Generic Exception catch-all removed. Service layer errors (e.g. ResourceNotFoundError for user)
+    # should be handled by global handlers or specific AppError handlers.
 
 @router.get("/{project_id}", response_model=ProjectDetail)
 async def get_project(
@@ -120,14 +114,10 @@ async def get_project(
     Returns:
         ProjectDetail: 项目详细信息
     """
-    try:
-        # validate_project_access 依赖已经检查了权限并返回了项目
-        return ProjectDetail.model_validate(project)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取项目详情失败: {str(e)}"
-        )
+    # validate_project_access 依赖已经检查了权限并返回了项目.
+    # If model_validate fails, it's a Pydantic validation error, handled globally.
+    # Generic Exception catch-all removed.
+    return ProjectDetail.model_validate(project)
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
 async def update_project(
@@ -154,11 +144,7 @@ async def update_project(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"更新项目失败: {str(e)}"
-        )
+    # Generic Exception catch-all removed.
 
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(
@@ -179,11 +165,7 @@ async def delete_project(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"删除项目失败: {str(e)}"
-        )
+    # Generic Exception catch-all removed.
 
 @router.post("/{project_id}/members", response_model=ProjectMemberResponse)
 async def add_project_member(
@@ -203,18 +185,19 @@ async def add_project_member(
         ProjectMemberResponse: 项目成员信息
     """
     try:
-        await project_service.add_user_to_project(
+        member_details = await project_service.add_user_to_project(
             project_id=project_id,
             user_id=member_data.user_id,
             role=member_data.role
         )
         
-        # 需要实际获取添加后的成员信息
-        # 这里简化处理，直接构造响应
         return ProjectMemberResponse(
-            project_id=project_id,
-            user_id=member_data.user_id,
-            role=member_data.role
+            project_id=project_id, # project_id is from path
+            user_id=member_details['id'], # 'id' from returned dict is user_id
+            username=member_details.get('username'),
+            display_name=member_details.get('display_name'),
+            email=member_details.get('email'),
+            role=member_details['role']
         )
     except ResourceNotFoundError as e:
         raise HTTPException(
@@ -226,11 +209,7 @@ async def add_project_member(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(e)
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"添加项目成员失败: {str(e)}"
-        )
+    # Generic Exception catch-all removed.
 
 @router.get("/{project_id}/members", response_model=List[ProjectMemberResponse])
 async def get_project_members(
@@ -264,8 +243,4 @@ async def get_project_members(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取项目成员失败: {str(e)}"
-        )
+    # Generic Exception catch-all removed.

@@ -40,13 +40,15 @@ class ProjectService(Protocol):
         """
         ...
     
-    async def get_projects_by_user(self, user_id: int, skip: int, limit: int) -> tuple[list[Project], int]:
+    async def get_projects_by_user(self, user_id: int, skip: int, limit: int, project_type: Optional[str] = None, status: Optional[str] = None) -> tuple[list[Project], int]:
         """获取用户的项目列表
         
         Args:
             user_id: 用户ID
             skip: 分页起始位置
             limit: 每页数量
+            project_type: 项目类型 (可选)
+            status: 项目状态 (可选)
             
         Returns:
             tuple[list[Project], int]: 项目列表和总数量
@@ -95,7 +97,7 @@ class ProjectService(Protocol):
         """
         ...
     
-    async def add_user_to_project(self, project_id: int, user_id: int, role: str) -> None:
+    async def add_user_to_project(self, project_id: int, user_id: int, role: str) -> Dict[str, Any]:
         """添加用户到项目
         
         Args:
@@ -103,9 +105,12 @@ class ProjectService(Protocol):
             user_id: 用户ID
             role: 用户在项目中的角色
             
+        Returns:
+            Dict[str, Any]: 包含用户详细信息和角色的字典
+            
         Raises:
             ResourceNotFoundError: 项目或用户不存在
-            ResourceConflictError: 用户已经在项目中
+            ResourceConflictError: 用户已经在项目中 (This might be handled by update logic now)
         """
         ...
     

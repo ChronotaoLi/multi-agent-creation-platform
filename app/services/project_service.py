@@ -100,13 +100,15 @@ class ProjectServiceImpl:
         """
         return await self.project_repository.get_by_id(project_id)
     
-    async def get_projects_by_user(self, user_id: int, skip: int, limit: int) -> tuple[list[Project], int]:
+    async def get_projects_by_user(self, user_id: int, skip: int, limit: int, project_type: Optional[str] = None, status: Optional[str] = None) -> tuple[list[ProjectSchema], int]:
         """获取用户的项目列表
         
         Args:
             user_id: 用户ID
             skip: 分页起始位置
             limit: 每页数量
+            project_type: 项目类型 (可选)
+            status: 项目状态 (可选)
             
         Returns:
             tuple[list[Project], int]: 项目列表和总数量
@@ -203,43 +205,40 @@ class ProjectServiceImpl:
         """
         return await self.project_repository.check_user_access(project_id, user_id, required_role)
     
-    async def add_user_to_project(self, project_id: int, user_id: int, role: str) -> None:
-        """添加用户到项目
+    async def add_user_to_project(self, project_id: int, user_id: int, role: str) -> Dict[str, Any]:
+        """添加用户到项目或更新其角色
         
         Args:
             project_id: 项目ID
             user_id: 用户ID
             role: 用户在项目中的角色
             
+        Returns:
+            Dict[str, Any]: 包含用户详细信息和角色的字典
+            
         Raises:
             ResourceNotFoundError: 项目或用户不存在
-            ResourceConflictError: 用户已经在项目中
         """
         # 验证项目是否存在
-        project = await self.project_repository.get_by_id(project_id)
-        if not project:
+        project_db = await self.project_repository.get_by_id(project_id)
+        if not project_db:
             self.logger.error(f"Project with id {project_id} not found when adding user")
             raise ResourceNotFoundError(f"项目(ID: {project_id})不存在")
         
         # 验证用户是否存在
-        user = await self.user_repository.get_by_id(user_id)
-        if not user:
+        user_db = await self.user_repository.get_by_id(user_id)
+        if not user_db:
             self.logger.error(f"User with id {user_id} not found when adding to project")
             raise ResourceNotFoundError(f"用户(ID: {user_id})不存在")
         
-        # 检查用户是否已在项目中
-        if await self.check_user_project_access(project_id, user_id):
-            self.logger.error(f"User with id {user_id} already in project {project_id}")
-            raise ResourceConflictError(f"用户(ID: {user_id})已经在项目中")
+        # Repository method now handles add or update and returns details
+        member_details = await self.project_repository.add_user_to_project(project_id, user_id, role)
         
-        # 添加用户到项目
-        await self.project_repository.add_user_to_project(project_id, user_id, role)
-        
-        # 发布用户添加到项目事件
+        # 发布用户添加到项目事件 (or updated)
         await self.event_bus.publish(
             "projects",
             {
-                "type": "user_added_to_project",
+                "type": "user_added_or_updated_in_project", # Event type changed
                 "project_id": project_id,
                 "user_id": user_id,
                 "role": role,
@@ -247,7 +246,8 @@ class ProjectServiceImpl:
             }
         )
         
-        self.logger.info(f"User {user_id} added to project {project_id} with role {role}")
+        self.logger.info(f"User {user_id} added/updated in project {project_id} with role {role}")
+        return member_details
     
     async def get_project_users(self, project_id: int) -> list[UserWithRole]:
         """获取项目用户列表

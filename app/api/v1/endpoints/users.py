@@ -14,7 +14,7 @@ from app.core.config import get_settings
 from app.core.security import create_access_token, create_refresh_token, decode_refresh_token
 from app.models.schemas import UserCreate, UserUpdate, UserDB, Token
 from app.services.interfaces.user_service import UserService
-from app.utils.error_handlers import ResourceConflictError
+from app.utils.error_handlers import ResourceConflictError, AuthenticationError
 
 # 创建路由器
 router = APIRouter(
@@ -166,27 +166,22 @@ async def refresh_access_token(
     """
     try:
         # 解码刷新令牌
-        payload = decode_refresh_token(refresh_token)
+        payload = decode_refresh_token(refresh_token) # Can raise HTTPException (401)
         username = payload.get("sub")
         if username is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="无效的刷新令牌",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
+            # This case is specific and indicates a malformed token or an issue with its generation.
+            # Re-raising HTTPException directly is fine, or use AuthenticationError.
+            raise AuthenticationError(message="无效的刷新令牌：缺少用户信息")
+
         # 获取用户
         user = await user_service.get_user_by_username(username)
         if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="用户不存在",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
+            # If the user from a valid token no longer exists.
+            raise AuthenticationError(message="无效的刷新令牌：用户不存在")
+
         if not await user_service.is_active(user):
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=status.HTTP_403_FORBIDDEN, # 403 Forbidden is correct here
                 detail="用户未激活"
             )
             
@@ -211,10 +206,20 @@ async def refresh_access_token(
             "token_type": "bearer",
             "expires_in": access_token_expires.total_seconds()
         }
-    except Exception:
+    except AuthenticationError as e: # Catch our specific AuthenticationError
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无法验证刷新令牌",
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except HTTPException as e: # Re-raise HTTPExceptions raised by decode_refresh_token or others
+        raise e
+    except Exception as e: # Catch any other unexpected errors
+        # Log this unexpected error for debugging
+        # logger.error(f"Unexpected error during token refresh: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="令牌刷新时发生内部错误", # Internal server error
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -235,18 +240,14 @@ async def verify_email(
     Raises:
         HTTPException: 验证失败
     """
-    try:
-        # 这里需要实现验证邮箱令牌的逻辑
-        # 由于文档中没有详细说明，这里提供一个基本框架
-        
-        # 解码令牌 (具体实现需要根据实际的邮件验证流程)
-        # payload = decode_verification_token(token)
-        # user_id = payload.get("user_id")
-        
-        # 如果成功验证，返回成功消息
-        return {"message": "邮箱验证成功"}
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无效的验证令牌"
-        )
+    # TODO: Implement email verification logic:
+    #   1. Define token generation (e.g., using itsdangerous or JWTs).
+    #   2. Service method to generate and (potentially) send token via email.
+    #   3. This endpoint should:
+    #      - Accept the token.
+    #      - Call a service method `user_service.verify_email_address(token)` (or similar).
+    #      - The service method should decode, validate token, and update user status (e.g., email_verified=True, is_active=True).
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Email verification functionality is not yet implemented."
+    )
