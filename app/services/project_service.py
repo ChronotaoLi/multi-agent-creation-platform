@@ -122,7 +122,13 @@ class ProjectServiceImpl:
             self.logger.error(f"User with id {user_id} not found when getting projects")
             raise ResourceNotFoundError(f"用户(ID: {user_id})不存在")
         
-        return await self.project_repository.get_by_user_id(user_id, skip, limit)
+        return await self.project_repository.get_by_user(
+            user_id=user_id,
+            skip=skip,
+            limit=limit,
+            project_type=project_type,
+            status=status
+        )
     
     async def update_project(self, project_id: int, project_data: ProjectUpdate) -> Project:
         """更新项目信息

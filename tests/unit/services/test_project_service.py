@@ -295,10 +295,11 @@ class TestProjectService:
         ]
         total_count = len(mock_projects)
 
-        mock_project_repo.get_by_user_id.return_value = (mock_projects, total_count)
+        # Update the mock to use get_by_user and expect new parameters
+        mock_project_repo.get_by_user.return_value = (mock_projects, total_count)
 
         # 执行测试
-        result, count = await project_service.get_projects_by_user(user_id, skip, limit)
+        result, count = await project_service.get_projects_by_user(user_id, skip, limit) # project_type and status default to None
 
         # 验证结果
         assert result is not None
@@ -311,7 +312,14 @@ class TestProjectService:
 
         # 验证repository方法调用
         mock_user_repo.get_by_id.assert_called_once_with(user_id)
-        mock_project_repo.get_by_user_id.assert_called_once_with(user_id, skip, limit)
+        # Update assertion to check for the new parameters
+        mock_project_repo.get_by_user.assert_called_once_with(
+            user_id=user_id,
+            skip=skip,
+            limit=limit,
+            project_type=None,  # Explicitly check for None
+            status=None         # Explicitly check for None
+        )
 
     @pytest.mark.asyncio
     async def test_get_user_projects_empty(self, project_service, mock_project_repo, mock_user_repo):
@@ -327,10 +335,11 @@ class TestProjectService:
         mock_user_repo.get_by_id.return_value = mock_user
 
         # 模拟用户无项目的情况
-        mock_project_repo.get_by_user_id.return_value = ([], 0)
+        # Update the mock to use get_by_user
+        mock_project_repo.get_by_user.return_value = ([], 0)
 
         # 执行测试
-        result, count = await project_service.get_projects_by_user(user_id, skip, limit)
+        result, count = await project_service.get_projects_by_user(user_id, skip, limit) # project_type and status default to None
 
         # 验证结果
         assert result == []
@@ -338,4 +347,53 @@ class TestProjectService:
 
         # 验证repository方法调用
         mock_user_repo.get_by_id.assert_called_once_with(user_id)
-        mock_project_repo.get_by_user_id.assert_called_once_with(user_id, skip, limit) 
+        # Update assertion to check for the new parameters
+        mock_project_repo.get_by_user.assert_called_once_with(
+            user_id=user_id,
+            skip=skip,
+            limit=limit,
+            project_type=None,
+            status=None
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "filter_project_type, filter_status",
+        [
+            ("story", "active"),
+            ("novel", None),
+            (None, "completed"),
+            (None, None), # Covered by existing tests but good to have explicitly
+        ],
+    )
+    async def test_get_projects_by_user_with_filters(
+        self,
+        project_service,
+        mock_project_repo,
+        mock_user_repo,
+        filter_project_type,
+        filter_status,
+    ):
+        user_id = 1
+        skip = 0
+        limit = 10
+
+        mock_user = Mock()
+        mock_user.id = user_id
+        mock_user_repo.get_by_id.return_value = mock_user
+
+        # Mock the repository's get_by_user method to return an empty list and 0 count
+        mock_project_repo.get_by_user.return_value = ([], 0)
+
+        await project_service.get_projects_by_user(
+            user_id, skip, limit, project_type=filter_project_type, status=filter_status
+        )
+
+        mock_user_repo.get_by_id.assert_called_once_with(user_id)
+        mock_project_repo.get_by_user.assert_called_once_with(
+            user_id=user_id,
+            skip=skip,
+            limit=limit,
+            project_type=filter_project_type,
+            status=filter_status,
+        )

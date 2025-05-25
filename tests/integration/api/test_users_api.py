@@ -400,4 +400,74 @@ class TestUsersAPI:
 
         # 验证响应
         assert response.status_code == 401
-        assert response.json()["detail"] == "无效的刷新令牌" 
+        assert response.json()["detail"] == "无效的刷新令牌"
+
+    def test_refresh_token_missing_username_in_payload(self, client, mocker):
+        """测试刷新令牌失败 - payload中缺少username"""
+        # Mock decode_refresh_token to return payload without 'sub'
+        mocker.patch(
+            "app.api.v1.endpoints.users.decode_refresh_token",
+            return_value={"some_other_claim": "value"}
+        )
+        # Mock get_user_service (it shouldn't be called in this flow)
+        mock_user_service = AsyncMock()
+        mocker.patch("app.api.v1.endpoints.users.get_user_service", return_value=mock_user_service)
+
+        response = client.post("/users/refresh", json={"refresh_token": "test_token"})
+
+        assert response.status_code == 401
+        assert "无效的刷新令牌：缺少用户信息" in response.json()["detail"]
+
+    def test_refresh_token_user_not_found(self, client, mocker):
+        """测试刷新令牌失败 - 用户未找到"""
+        # Mock decode_refresh_token to return payload with 'sub'
+        mocker.patch(
+            "app.api.v1.endpoints.users.decode_refresh_token",
+            return_value={"sub": "unknownuser"}
+        )
+        # Mock get_user_service where get_user_by_username returns None
+        mock_user_service = AsyncMock()
+        mock_user_service.get_user_by_username = AsyncMock(return_value=None)
+        mocker.patch("app.api.v1.endpoints.users.get_user_service", return_value=mock_user_service)
+
+        response = client.post("/users/refresh", json={"refresh_token": "test_token"})
+
+        assert response.status_code == 401
+        assert "无效的刷新令牌：用户不存在" in response.json()["detail"]
+        mock_user_service.get_user_by_username.assert_called_once_with("unknownuser")
+
+    def test_refresh_token_unexpected_exception(self, client, mocker):
+        """测试刷新令牌失败 - 发生意外错误"""
+        # Mock decode_refresh_token for a valid payload
+        mocker.patch(
+            "app.api.v1.endpoints.users.decode_refresh_token",
+            return_value={"sub": "testuser"}
+        )
+        # Mock user service
+        mock_user_service = AsyncMock()
+        mock_user = MagicMock() # Mock user object
+        mock_user_service.get_user_by_username = AsyncMock(return_value=mock_user)
+        mock_user_service.is_active = AsyncMock(return_value=True)
+        mocker.patch("app.api.v1.endpoints.users.get_user_service", return_value=mock_user_service)
+
+        # Mock create_access_token to raise a generic Exception
+        mocker.patch(
+            "app.api.v1.endpoints.users.create_access_token",
+            side_effect=Exception("Unexpected error")
+        )
+
+        response = client.post("/users/refresh", json={"refresh_token": "test_token"})
+
+        assert response.status_code == 500
+        assert "令牌刷新时发生内部错误" in response.json()["detail"]
+
+    def test_verify_email_not_implemented(self, client, mocker):
+        """测试邮箱验证接口返回501 Not Implemented"""
+        # Mock get_user_service (though it shouldn't be called)
+        mock_user_service = AsyncMock()
+        mocker.patch("app.api.v1.endpoints.users.get_user_service", return_value=mock_user_service)
+
+        response = client.post("/users/verify-email/some_token")
+
+        assert response.status_code == 501
+        assert "Email verification functionality is not yet implemented." in response.json()["detail"]
